@@ -24,6 +24,7 @@ proc purple::buddyList::init {} {
 	set CONTACT_LIST(total_count)    0
 	set CONTACT_LIST(total_accounts) 0
 	set CONTACT_LIST(accounts_list)  [list]
+	set SETTINGS(idx)                0
 
 	set INIT 1
 }
@@ -47,6 +48,34 @@ proc purple::buddyList::getAvailAccounts {} {
 	return $CONTACT_LIST(accounts_list)
 }
 
+
+#
+# Add a new setting to a given level
+#
+# _parentID - ID of the parent level
+# _level    - Parent level
+# _name     - Name of the setting
+# _tupe     - Data type of the setting
+#
+# return    - New Index
+#
+proc purple::buddyList::addSetting {
+	_parentID \
+	_level \
+	_name \
+	_type \
+} {
+	variable SETTINGS
+
+	set idx [incr SETTINGS(idx)]
+
+	lappend SETTINGS($_level,idxs)         $idx
+	set SETTINGS($_level,$idx,names)       $_name
+	set SETTINGS($_level,$idx,$_name)      $_value
+	set SETTINGS($_level,$idx,$_name,type) $_type
+
+	return $idx
+}
 
 proc purple::buddyList::parseContactList {} {
 
@@ -99,7 +128,7 @@ proc purple::buddyList::parseContactList {} {
 
 proc purple::buddyList::_parseContact {_id _groupName _buddy} {
 	variable CONTACT_LIST
-	variable CONTACT_SETTINGS
+	variable SETTINGS
 
 	set account [$_buddy getAttribute account]
 	set proto   [$_buddy getAttribute proto]
@@ -150,6 +179,15 @@ proc purple::buddyList::_parseComps {_id _node {_level bd}} {
 
 }
 
+#
+# Parse a component
+#
+# _id     - ID of the current component
+# _comp   - Comp node to parse
+# _level  - Parent level
+#
+# reurn - N/A
+#
 proc purple::buddyList::_parseComp {_id _comp {_level bd}} {
 	variable COMPONENTS
 
@@ -162,30 +200,48 @@ proc purple::buddyList::_parseComp {_id _comp {_level bd}} {
 }
 
 #
+# Parses the any settings and stores them against the level
 #
+# _parentId - The ID of the parent level
+# _settings - The seeting XML node to process
+# _level    - The level being processed
+#           + bd  [Buddy]
+#           + gp  [Group]
+#           + cnt [Contact]
 #
+# return    - List of new settings Indexs
 #
-proc purple::buddyList::_parseSettings {_id _node {_level bd}} {
+proc purple::buddyList::_parseSettings {_parentId _node {_level bd}} {
 	set settings [$_node getElementsByTagName "settings"]
+
+	set newIdxs [list]
 
 	for {set i 0} {$i < [llength $settings]} {incr i} {
 		set currSetting [lindex $settings $i]
-		_parseSetting $_id $currSetting $_level
+		lappend newIdxs [_parseSetting $_parentId $currSetting $_level]
 	}
+
+	return $newIdxs
 }
 
-proc purple::buddyList::_parseSetting {_id _setting {_level bd}} {
-	variable CONTACT_SETTINGS
+#
+# Parse a setting node
+#
+# _parentId  - The parent level ID
+# _setting   - The new setting node
+# _level     - Parent level
+#
+# reurn      - Index of new settings
+#
+proc purple::buddyList::_parseSetting {_parentId _setting {_level bd}} {
+	variable SETTINGS
 
 	set name [$_setting getAttribute name]
 	set type [$_setting getAttribute "type"]
 
 	set value [_nodeValue $_setting]
 
-	set CONTACT_SETTINGS($_level,$_id,names) $name
-	set CONTACT_SETTINGS($_level,$_id,$name) $value
-	set CONTACT_SETTINGS($_level,$_id,$name,type) $type
-
+	addSetting $_parentId $_level $_name $_type
 }
 
 
