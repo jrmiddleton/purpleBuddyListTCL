@@ -12,36 +12,57 @@ namespace eval purple::buddyList {
 # Public procedures
 # ===================================================================================
 
-proc purple::buddyList::init {} {
+proc purple::buddyList::init {{fileName "~/.purple/blist.xml" }} {
 	variable INIT
 	variable CONTACT_LIST
 	variable SETTINGS
+	variable CONFIG
 
 	if {$INIT} {
 		return 1
 	}
 
+	set CONFIG(fileName) $fileName
+
 	set CONTACT_LIST(total_count)    0
 	set CONTACT_LIST(total_accounts) 0
 	set CONTACT_LIST(accounts_list)  [list]
-	set SETTINGS(idx)                0
 
+	# Set up indices
+	set SETTINGS(idx)                0
+	set CONTACT_LIST(idx)            0
+	
 	set INIT 1
 }
 
 
+#
+# Get total contacts
+#
+# return - Total number of contacts
+#
 proc purple::buddyList::getTotalContacts {} {
 	variable CONTACT_LIST
 
 	return $CONTACT_LIST(total_count)
 }
 
+#
+# Get the total number of avilable accounts
+#
+# return - Total number of contacts
+#
 proc purple::buddyList::getTotalAccoutnts {} {
 	variable CONTACT_LIST
 
 	return $CONTACT_LIST(total_accounts)
 }
 
+#
+# Get a list of available accounts
+#
+# return - list of available accounts i.e. proto-msn
+#
 proc purple::buddyList::getAvailAccounts {} {
 	variable CONTACT_LIST
 
@@ -77,17 +98,68 @@ proc purple::buddyList::addSetting {
 	return $idx
 }
 
+#
+# Add a new contact
+#
+# _groupName - Name of parent group
+# _proto     - Protocol associated
+# _account   - Parent account
+# _name      - Contact name
+# _ alias    - Alias of the contact
+#
+#
+# return - New contact id
+#
+proc purple::buddyList::addContact {
+	_groupName \
+	_proto \
+	_account \
+	_name \
+	_alias \
+} {
+	variable CONTACT_LIST
+
+	set idx $CONTACT_LIST(idx)
+
+	incr CONTACT_LIST(idx)
+
+	set CONTACT_LIST($idx,account)    $_account
+	set CONTACT_LIST($idx,proto)      $_proto
+	set CONTACT_LIST($idx,name)       $_name
+	set CONTACT_LIST($idx,alias)      $_alias
+	set CONTACT_LIST($idx,groupName)  $_groupName
+
+	lappend CONTACT_LIST($_groupName,indices)  $idx
+
+	if {[lsearch $CONTACT_LIST(accounts_list) $_proto] == -1} {
+		lappend CONTACT_LIST(accounts_list) $_proto
+		set CONTACT_LIST($_proto,groups)    [list]
+
+		incr CONTACT_LIST(total_accounts)
+	}
+
+	if {[lsearch $CONTACT_LIST($_proto,groups) $_groupName] == -1} {
+		lappend CONTACT_LIST($_proto,groups) $_groupName
+	}
+
+	incr CONTACT_LIST(total_count)
+
+	return $idx
+}
+
 proc purple::buddyList::parseContactList {} {
+
+	variable CONFIG
 
 	set fp ""
 
 	if {[catch {
 		# Read in the buddy list
-		set fp [open "~/.purple/blist.xml" r]
+		set fp [open $CONFIG(fileName) r]
 		set fileData [read $fp]
 		close $fp
 	} errMsg]} {
-		_log "Unable to process buddlist: \n $errMsg"
+		_log "Unable to process buddyList: \n $errMsg"
 		return [list 0 $errMsg]
 	}
 
@@ -126,6 +198,15 @@ proc purple::buddyList::parseContactList {} {
 # ===================================================================================
 
 
+#
+# Parse the contact XML node and populate CONTACT_LIST
+#
+# _id        - ID of the contact. Must be Unique per group
+# _groupName - The name of the current group
+# _buddy     - Buddy object to parse
+#
+# return     - Index of the idx contact
+#
 proc purple::buddyList::_parseContact {_id _groupName _buddy} {
 	variable CONTACT_LIST
 	variable SETTINGS
@@ -136,27 +217,24 @@ proc purple::buddyList::_parseContact {_id _groupName _buddy} {
 	set conName [_nodeValue [$_buddy getElementsByTagName name]]
 	set conAlias [_nodeValue [$_buddy getElementsByTagName alias]]
 
-	set CONTACT_LIST($_groupName,$_id,account) $account
-	set CONTACT_LIST($_groupName,$_id,proto) $proto
-	set CONTACT_LIST($_groupName,$_id,name ) $name
-	set CONTACT_LIST($_groupName,$_id,alias) $alias
-	lappend CONTACT_LIST($_groupName,indices) $_id
+	set idx [addContact $_groupName $proto $account $conName $conAlias]
 
-	if {[lsearch $CONTACT_LIST(accounts_list) $proto] == -1} {
-		lappend CONTACT_LIST(accounts_list) $proto
-		set CONTACT_LIST($proto,groups) [list]
-		incr CONTACT_LIST(total_accounts)
-	}
+	_parseSettings $idx $_buddy "bdy"
 
-	if {[lsearch $CONTACT_LIST($proto,groups) $_groupName] == -1} {
-		lappend CONTACT_LIST($proto,groups) $_groupName
-	}
+	return $idx
 
-	_parseSettings $_id $_buddy "cnt"
-
-	incr CONTACT_LIST(total_count)
 }
 
+#
+# Parse a chat XML node
+#
+# _id        - ID of the current chat
+# _chat      - Chat XML Node
+# _groupName - Parent group name
+#
+#
+# return - N/A
+#
 proc purple::buddyList::_parseChat {_id _chat _groupName} {
 	variable CHAT_LIST
 
@@ -165,7 +243,14 @@ proc purple::buddyList::_parseChat {_id _chat _groupName} {
 	set proto   [$_chat getAttribute proto]
 	set account [$_chat getAttribute account]
 
+	set CHAT_LIST($_groupName,$_id,proto)   $proto
+	set CHAT_LIST($_groupName,$_id,account) $account
+
+	lappend CHAT_LIST($_groupName,idxs) $_id
+
 	_parseSettings $_id $_chat $_currLevel
+
+	return ""
 
 }
 
@@ -207,6 +292,7 @@ proc purple::buddyList::_parseComp {_id _comp {_level bd}} {
 # _level    - The level being processed
 #           + bd  [Buddy]
 #           + gp  [Group]
+#           + cht [Chat]
 #           + cnt [Contact]
 #
 # return    - List of new settings Indexs
